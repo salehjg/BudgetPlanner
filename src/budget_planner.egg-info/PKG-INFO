@@ -1,0 +1,6 @@
+Metadata-Version: 2.4
+Name: budget-planner
+Version: 0.1.0
+Summary: CLI budget planner that projects your bank balance from YAML config
+Requires-Python: >=3.10
+Requires-Dist: pyyaml
