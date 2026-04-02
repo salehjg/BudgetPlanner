@@ -1,0 +1,33 @@
+# Budget planner configuration
+# All amounts: positive = income, negative = expense
+
+paycheck:
+  day: 25          # day of month you get paid
+  amount: 3000     # default monthly paycheck
+  overrides:       # override for specific months
+    "2026-06": 3500  # bonus month
+
+balance:
+  date: 2026-04-01   # date you last checked your bank account
+  amount: 5200       # how much was in your account on that date
+
+subscriptions:
+  - name: Netflix
+    day: 5
+    amount: -15.99
+
+  - name: Spotify
+    day: 1
+    amount: -9.99
+
+  - name: Gym
+    day: 10
+    amount: -45.00
+
+  - name: Cloud Storage
+    day: 15
+    amount: -2.99
+
+  - name: Phone Plan
+    day: 20
+    amount: -55.00

@@ -1,0 +1,28 @@
+# April 2026 one-off expenses and income
+# Each entry: date, amount (+/-), note, and any extra columns you want
+
+- date: 2026-04-03
+  amount: -85.00
+  note: Groceries
+
+- date: 2026-04-07
+  amount: -42.50
+  note: Dinner out
+  category: food
+
+- date: 2026-04-12
+  amount: -35.00
+  note: Gas
+
+- date: 2026-04-14
+  amount: 150.00
+  note: Freelance payment
+
+- date: 2026-04-18
+  amount: -120.00
+  note: Electric bill
+  category: utilities
+
+- date: 2026-04-22
+  amount: -60.00
+  note: Groceries

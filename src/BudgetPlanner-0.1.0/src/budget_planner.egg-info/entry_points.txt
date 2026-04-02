@@ -1,0 +1,2 @@
+[console_scripts]
+bp = bp.cli:main
