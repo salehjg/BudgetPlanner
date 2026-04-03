@@ -25,6 +25,9 @@ subscriptions: []
   # - name: Spotify
   #   day: 1
   #   amount: -9.99
+
+import:
+  merge_tolerance_days: 2   # ±days when matching entries across sources (e.g. poste vs klarna)
 """
 
 ENTRIES_TEMPLATE = """\

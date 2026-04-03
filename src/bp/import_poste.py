@@ -26,6 +26,19 @@ def _to_date(val) -> date:
     return date.fromisoformat(str(val))
 
 
+_DEFAULT_MERGE_TOLERANCE_DAYS = 2
+
+
+def _load_import_settings(directory: Path) -> dict:
+    """Load the 'import' section from conf.yaml, falling back to defaults."""
+    conf = directory / "conf.yaml"
+    if not conf.exists():
+        return {}
+    with open(conf) as f:
+        raw = yaml.safe_load(f)
+    return (raw or {}).get("import", {}) or {}
+
+
 def _load_klarna_entries(directory: Path) -> list[dict]:
     """Load entries with source=klarna from YAML files in *directory*."""
     entries: list[dict] = []
@@ -116,8 +129,13 @@ def run_import(xlsx_path: Path, output_path: Path) -> None:
     if not all_entries:
         raise SystemExit("Error: no entries found in the XLSX file")
 
-    # Load klarna entries from the output directory for deduplication
+    # Load import settings from conf.yaml
     out_dir = output_path.parent
+    import_settings = _load_import_settings(out_dir)
+    tolerance = int(import_settings.get(
+        "merge_tolerance_days", _DEFAULT_MERGE_TOLERANCE_DAYS))
+
+    # Load klarna entries from the output directory for deduplication
     klarna_entries = _load_klarna_entries(out_dir) if out_dir.exists() else []
 
     # Build a consumable pool of (date, amount) from klarna
@@ -131,12 +149,12 @@ def run_import(xlsx_path: Path, output_path: Path) -> None:
 
     for entry in all_entries:
         if _is_klarna(entry["note"]):
-            # Try to match against a klarna entry (same amount, date ±2 days)
+            # Try to match against a klarna entry (same amount, date ±tolerance)
             amt = entry["amount"]
             dv = entry["date"]
             found = False
             for i, (kd, ka) in enumerate(klarna_pool):
-                if ka == amt and abs((dv - kd).days) <= 2:
+                if ka == amt and abs((dv - kd).days) <= tolerance:
                     klarna_pool.pop(i)
                     matched.append(entry)
                     found = True
