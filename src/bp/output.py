@@ -40,10 +40,19 @@ def _fmt_money(amount: float, width: int = 12) -> str:
     return _c(padded, GREEN if amount >= 0 else RED)
 
 
+def _fmt_money_raw(amount: float, width: int = 12) -> str:
+    sign = "+" if amount >= 0 else ""
+    return f"{sign}{amount:,.2f}".rjust(width)
+
+
 def _fmt_bal(amount: float, width: int = 12) -> str:
     raw = f"{amount:,.2f}"
     padded = raw.rjust(width)
     return _c(padded, GREEN if amount >= 0 else RED)
+
+
+def _fmt_bal_raw(amount: float, width: int = 12) -> str:
+    return f"{amount:,.2f}".rjust(width)
 
 
 # ---------------------------------------------------------------------------
@@ -51,40 +60,83 @@ def _fmt_bal(amount: float, width: int = 12) -> str:
 # ---------------------------------------------------------------------------
 
 def _print_cli(opening: float, events: list[Event],
-               start: date, end: date, verbose: bool) -> None:
-    print(_c(f"Today: {start.strftime('%A, %b %d, %Y')}", CYAN))
-    print(_c(f"Showing until: {end.strftime('%b %d, %Y')}", BOLD))
-    print(f"Balance now: {_fmt_bal(opening)}")
+               today: date, fm_start: date, fm_end: date,
+               verbose: bool) -> None:
+    print(_c(f"Today: {today.strftime('%A, %b %d, %Y')}", CYAN))
+    print(_c(f"Showing: {fm_start.strftime('%b %d')} \u2013 "
+             f"{fm_end.strftime('%b %d, %Y')}", BOLD))
+    print(f"Opening: {_fmt_bal(opening)}")
     print()
 
     if events:
         if verbose:
-            hdr = (f"  {'Date':<12}{'Category':<16}"
-                   f"{'Amount':>12}  {'Note':<26}{'Balance':>12}")
+            hdr = (f"  {'Date':<10}{'Cat':<12}"
+                   f"{'Amount':>12}  {'Note':<20}"
+                   f"{'Source':<10}{'M':>1} {'Balance':>12}")
+            width = 80
         else:
-            hdr = (f"  {'Date':<12}{'Amount':>12}  "
-                   f"{'Note':<26}{'Balance':>12}")
+            hdr = (f"  {'Date':<10}"
+                   f"{'Amount':>12}  {'Note':<20}"
+                   f"{'Source':<10}{'M':>1} {'Balance':>12}")
+            width = 68
         print(hdr)
-        width = 68 if verbose else 64
         print(f"  {'\u2500' * width}")
 
+        today_sep_shown = False
+        had_past = False
         prev_month: tuple[int, int] | None = None
+
         for e in events:
+            is_past = e.date < today
+
+            # Insert "today" separator when transitioning to today or future
+            if not today_sep_shown and not is_past:
+                if had_past:
+                    label = "\u2500\u2500\u2500 today "
+                    print(f"  {label}{'\u2500' * (width - len(label))}")
+                today_sep_shown = True
+
+            # Month separator (only between events on the same side of today)
             cur_month = (e.date.year, e.date.month)
             if prev_month and cur_month != prev_month:
-                print()  # visual separator between calendar months
+                print()
             prev_month = cur_month
 
+            if is_past:
+                had_past = True
+
             ds = e.date.strftime("%b %d")
-            amt = _fmt_money(e.amount)
-            bal = _fmt_bal(e.running_balance)
-            note = e.note[:26]
-            if verbose:
-                cat = e.category[:16]
-                print(f"  {ds:<12}{_c(cat, DIM):<{16 + (len(DIM) + len(RESET) if _color else 0)}}"
-                      f"{amt}  {note:<26}{bal}")
+            note = e.note[:20]
+            source = e.extra.get("_file", "")[:10]
+            merged = "\u2713" if e.extra.get("merged") else " "
+
+            if is_past:
+                # Dim entire line for past entries
+                amt = _fmt_money_raw(e.amount)
+                bal = _fmt_bal_raw(e.running_balance)
+                if verbose:
+                    cat = e.category[:12]
+                    line = (f"  {ds:<10}{cat:<12}"
+                            f"{amt}  {note:<20}"
+                            f"{source:<10}{merged:>1} {bal}")
+                else:
+                    line = (f"  {ds:<10}"
+                            f"{amt}  {note:<20}"
+                            f"{source:<10}{merged:>1} {bal}")
+                print(_c(line, DIM))
             else:
-                print(f"  {ds:<12}{amt}  {note:<26}{bal}")
+                amt = _fmt_money(e.amount)
+                bal = _fmt_bal(e.running_balance)
+                if verbose:
+                    cat = e.category[:12]
+                    cat_w = 12 + (len(DIM) + len(RESET) if _color else 0)
+                    print(f"  {ds:<10}{_c(cat, DIM):<{cat_w}}"
+                          f"{amt}  {note:<20}"
+                          f"{source:<10}{merged:>1} {bal}")
+                else:
+                    print(f"  {ds:<10}"
+                          f"{amt}  {note:<20}"
+                          f"{source:<10}{merged:>1} {bal}")
 
         print(f"  {'\u2500' * width}")
 
@@ -126,29 +178,36 @@ def _print_category_breakdown(events: list[Event]) -> None:
 # ---------------------------------------------------------------------------
 
 def _print_md(opening: float, events: list[Event],
-              start: date, end: date, verbose: bool) -> None:
+              today: date, fm_start: date, fm_end: date,
+              verbose: bool) -> None:
     sign = lambda a: f"+{a:,.2f}" if a >= 0 else f"{a:,.2f}"
 
-    print(f"**Today:** {start.isoformat()}")
+    print(f"**Today:** {today.isoformat()}")
     print()
-    print(f"**Showing until:** {end.strftime('%b %d, %Y')}")
+    print(f"**Showing:** {fm_start.isoformat()} \u2013 {fm_end.isoformat()}")
     print()
-    print(f"**Balance now:** {opening:,.2f}")
+    print(f"**Opening:** {opening:,.2f}")
     print()
 
     if verbose:
-        print("| Date | Category | Amount | Note | Balance |")
-        print("|------|----------|-------:|------|--------:|")
+        print("| Date | Category | Amount | Note | Source | M | Balance |")
+        print("|------|----------|-------:|------|--------|---|--------:|")
         for e in events:
+            src = e.extra.get("_file", "")
+            mrg = "\u2713" if e.extra.get("merged") else ""
             print(f"| {e.date.isoformat()} | {e.category} "
                   f"| {sign(e.amount)} | {e.note} "
+                  f"| {src} | {mrg} "
                   f"| {e.running_balance:,.2f} |")
     else:
-        print("| Date | Amount | Note | Balance |")
-        print("|------|-------:|------|--------:|")
+        print("| Date | Amount | Note | Source | M | Balance |")
+        print("|------|-------:|------|--------|---|--------:|")
         for e in events:
+            src = e.extra.get("_file", "")
+            mrg = "\u2713" if e.extra.get("merged") else ""
             print(f"| {e.date.isoformat()} | {sign(e.amount)} "
-                  f"| {e.note} | {e.running_balance:,.2f} |")
+                  f"| {e.note} | {src} | {mrg} "
+                  f"| {e.running_balance:,.2f} |")
 
     total_in = sum(e.amount for e in events if e.amount > 0)
     total_out = sum(e.amount for e in events if e.amount < 0)
@@ -156,9 +215,9 @@ def _print_md(opening: float, events: list[Event],
     closing = opening + net
 
     print()
-    print(f"| | **Income** | {sign(total_in)} | |")
-    print(f"| | **Expenses** | {sign(total_out)} | |")
-    print(f"| | **Net** | {sign(net)} | |")
+    print(f"| | **Income** | {sign(total_in)} | | | |")
+    print(f"| | **Expenses** | {sign(total_out)} | | | |")
+    print(f"| | **Net** | {sign(net)} | | | |")
     print()
     print(f"**Closing Balance:** {closing:,.2f}")
 
@@ -168,16 +227,19 @@ def _print_md(opening: float, events: list[Event],
 # ---------------------------------------------------------------------------
 
 def _to_dict(opening: float, events: list[Event],
-             start: date, end: date) -> dict:
+             today: date, fm_start: date, fm_end: date) -> dict:
     total_in = sum(e.amount for e in events if e.amount > 0)
     total_out = sum(e.amount for e in events if e.amount < 0)
     return {
-        "today": start.isoformat(),
-        "period_end": end.isoformat(),
-        "balance_now": opening,
+        "today": today.isoformat(),
+        "period_start": fm_start.isoformat(),
+        "period_end": fm_end.isoformat(),
+        "opening_balance": opening,
         "events": [
             {"date": e.date.isoformat(), "amount": e.amount,
              "note": e.note, "category": e.category,
+             "source": e.extra.get("_file", ""),
+             "merged": e.extra.get("merged", False),
              "balance": round(e.running_balance, 2)}
             for e in events
         ],
@@ -191,13 +253,14 @@ def _to_dict(opening: float, events: list[Event],
 
 
 def _print_json(opening: float, events: list[Event],
-                start: date, end: date) -> None:
-    print(json.dumps(_to_dict(opening, events, start, end), indent=2))
+                today: date, fm_start: date, fm_end: date) -> None:
+    print(json.dumps(_to_dict(opening, events, today, fm_start, fm_end),
+                     indent=2))
 
 
 def _print_yaml(opening: float, events: list[Event],
-                start: date, end: date) -> None:
-    print(yaml.dump(_to_dict(opening, events, start, end),
+                today: date, fm_start: date, fm_end: date) -> None:
+    print(yaml.dump(_to_dict(opening, events, today, fm_start, fm_end),
                     default_flow_style=False, sort_keys=False))
 
 
@@ -206,15 +269,15 @@ def _print_yaml(opening: float, events: list[Event],
 # ---------------------------------------------------------------------------
 
 def print_output(opening: float, events: list[Event],
-                 start: date, end: date,
+                 today: date, fm_start: date, fm_end: date,
                  fmt: str = "cli", verbose: bool = False) -> None:
     _init_color()
 
     if fmt == "md":
-        _print_md(opening, events, start, end, verbose)
+        _print_md(opening, events, today, fm_start, fm_end, verbose)
     elif fmt == "json":
-        _print_json(opening, events, start, end)
+        _print_json(opening, events, today, fm_start, fm_end)
     elif fmt == "yaml":
-        _print_yaml(opening, events, start, end)
+        _print_yaml(opening, events, today, fm_start, fm_end)
     else:
-        _print_cli(opening, events, start, end, verbose)
+        _print_cli(opening, events, today, fm_start, fm_end, verbose)

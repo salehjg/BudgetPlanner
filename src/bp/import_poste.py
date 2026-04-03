@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from pathlib import Path
+from typing import Any
 
 import yaml
 
@@ -39,13 +40,29 @@ def _load_import_settings(directory: Path) -> dict:
     return (raw or {}).get("import", {}) or {}
 
 
-def _load_klarna_entries(directory: Path) -> list[dict]:
-    """Load entries with source=klarna from YAML files in *directory*."""
-    entries: list[dict] = []
+def _read_header(path: Path) -> str:
+    """Read leading comment and blank lines from a YAML file."""
+    lines: list[str] = []
+    with open(path) as f:
+        for line in f:
+            if line.startswith("#") or line.strip() == "":
+                lines.append(line)
+            else:
+                break
+    return "".join(lines)
+
+
+def _load_klarna_files(directory: Path) -> dict[Path, tuple[str, Any]]:
+    """Load YAML files containing klarna entries.
+
+    Returns ``{path: (header_text, parsed_data)}``.
+    """
+    files: dict[Path, tuple[str, Any]] = {}
     for ext in ("*.yaml", "*.yml"):
         for path in sorted(directory.glob(ext)):
             if path.name.startswith("conf."):
                 continue
+            header = _read_header(path)
             with open(path) as f:
                 raw = yaml.safe_load(f)
             if raw is None:
@@ -56,14 +73,15 @@ def _load_klarna_entries(directory: Path) -> list[dict]:
                 file_source = raw.get("source")
                 items = raw.get("entries", [])
             else:
-                items = raw
+                items = raw or []
 
-            if not items:
-                continue
-            for item in items:
-                if file_source == "klarna" or item.get("source") == "klarna":
-                    entries.append(item)
-    return entries
+            has_klarna = any(
+                file_source == "klarna" or item.get("source") == "klarna"
+                for item in items
+            )
+            if has_klarna:
+                files[path] = (header, raw)
+    return files
 
 
 # ------------------------------------------------------------------
@@ -135,15 +153,21 @@ def run_import(xlsx_path: Path, output_path: Path) -> None:
     tolerance = int(import_settings.get(
         "merge_tolerance_days", _DEFAULT_MERGE_TOLERANCE_DAYS))
 
-    # Load klarna entries from the output directory for deduplication
-    klarna_entries = _load_klarna_entries(out_dir) if out_dir.exists() else []
+    # Load klarna files (with headers for later write-back)
+    klarna_files = _load_klarna_files(out_dir) if out_dir.exists() else {}
 
-    # Build a consumable pool of (date, amount) from klarna
-    klarna_pool: list[tuple[date, float]] = [
-        (_to_date(e["date"]), round(float(e["amount"]), 2))
-        for e in klarna_entries
-    ]
+    # Build a consumable pool with references to the actual entry dicts
+    klarna_pool: list[tuple[date, float, dict, Path]] = []
+    for path, (_hdr, raw) in klarna_files.items():
+        file_source = raw.get("source") if isinstance(raw, dict) else None
+        items = raw.get("entries", []) if isinstance(raw, dict) else (raw or [])
+        for item in items:
+            if file_source == "klarna" or item.get("source") == "klarna":
+                kd = _to_date(item["date"])
+                ka = round(float(item["amount"]), 2)
+                klarna_pool.append((kd, ka, item, path))
 
+    modified_paths: set[Path] = set()
     matched: list[dict] = []
     output_entries: list[dict] = []
 
@@ -153,9 +177,11 @@ def run_import(xlsx_path: Path, output_path: Path) -> None:
             amt = entry["amount"]
             dv = entry["date"]
             found = False
-            for i, (kd, ka) in enumerate(klarna_pool):
+            for i, (kd, ka, kentry, kpath) in enumerate(klarna_pool):
                 if ka == amt and abs((dv - kd).days) <= tolerance:
                     klarna_pool.pop(i)
+                    kentry["merged"] = True
+                    modified_paths.add(kpath)
                     matched.append(entry)
                     found = True
                     break
@@ -165,9 +191,19 @@ def run_import(xlsx_path: Path, output_path: Path) -> None:
         else:
             output_entries.append(entry)
 
+    # Write back klarna files that had entries marked as merged
+    for path in modified_paths:
+        header, raw = klarna_files[path]
+        with open(path, "w") as f:
+            if header:
+                f.write(header)
+            yaml.dump(raw, f,
+                      default_flow_style=False, sort_keys=False,
+                      allow_unicode=True)
+
     output_entries.sort(key=lambda e: e["date"])
 
-    # Write YAML
+    # Write poste YAML
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output = {"source": "poste", "entries": output_entries}
 
@@ -181,6 +217,6 @@ def run_import(xlsx_path: Path, output_path: Path) -> None:
     klarna_total = sum(e["amount"] for e in matched)
 
     print(f"Imported {len(output_entries)} entries to {output_path}")
-    print(f"  Skipped {len(matched)} Klarna entries"
-          f" (matched against klarna import, total: {klarna_total:,.2f})")
+    print(f"  Marked {len(matched)} klarna entries as merged"
+          f" (total: {klarna_total:,.2f})")
     print(f"  Total: {total:,.2f}")

@@ -132,9 +132,11 @@ def load_entries(directory: Path) -> list[Entry]:
             items = raw if isinstance(raw, list) else raw.get("entries", [])
             if not items:
                 continue
+            file_stem = path.stem
             for item in items:
                 known = {"date", "amount", "note"}
                 extra = {k: v for k, v in item.items() if k not in known}
+                extra["_file"] = file_stem
                 entries.append(Entry(
                     date=_parse_date(item["date"]),
                     amount=float(item["amount"]),
@@ -174,13 +176,15 @@ def build_events(config: Config, entries: list[Entry],
         key = d.strftime("%Y-%m")
         amount = config.paycheck_overrides.get(key, config.paycheck_amount)
         events.append(Event(date=d, amount=amount,
-                            note="Paycheck", category="paycheck"))
+                            note="Paycheck", category="paycheck",
+                            extra={"_file": "conf"}))
 
     # Subscriptions
     for sub in config.subscriptions:
         for d in _monthly_dates(sub.day, start, end):
             events.append(Event(date=d, amount=sub.amount,
-                                note=sub.name, category="subscription"))
+                                note=sub.name, category="subscription",
+                                extra={"_file": "conf"}))
 
     # Manual entries
     for entry in entries:

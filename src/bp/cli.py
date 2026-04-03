@@ -8,7 +8,6 @@ from pathlib import Path
 from .core import (
     add_months,
     calculate,
-    filter_past,
     financial_month_start,
     load_config,
     load_entries,
@@ -16,21 +15,32 @@ from .core import (
 from .init import run_init
 from .output import print_output
 
-_SUBCOMMANDS = {"init", "import"}
+_SUBCOMMANDS = {"init", "import", "show"}
 
 
 def main(argv: list[str] | None = None) -> None:
     if argv is None:
         argv = sys.argv[1:]
 
-    # Default to "show" when the first arg is not a known subcommand.
-    # This lets `bp .` and `bp -v .` work without typing `bp show .`.
-    if not argv or argv[0] not in _SUBCOMMANDS:
+    # Default to "show" when the first arg is not a known subcommand
+    # and not a help flag.  This lets `bp .` and `bp -v .` work
+    # without typing `bp show .`.
+    if argv and argv[0] not in _SUBCOMMANDS and argv[0] not in ("-h", "--help"):
         argv = ["show"] + list(argv)
 
     parser = argparse.ArgumentParser(
         prog="bp",
-        description="Budget planner - project your bank balance from YAML config.",
+        description="Budget planner \u2013 project your bank balance from YAML config.",
+        epilog=(
+            "examples:\n"
+            "  bp                        show current financial month\n"
+            "  bp /path/to/budget        show budget from a directory\n"
+            "  bp -m 3 -v                show 3 months, verbose\n"
+            "  bp init .                 create starter config\n"
+            "  bp import klarna K.html klarna.yaml\n"
+            "  bp import poste  P.xlsx  poste.yaml\n"
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     sub = parser.add_subparsers(dest="command")
 
@@ -116,14 +126,5 @@ def main(argv: list[str] | None = None) -> None:
 
     opening, events = calculate(config, entries, fm_start, fm_end)
 
-    # Drop past events and today's already-paid entries
-    skipped, events = filter_past(events, today)
-    opening += skipped
-    # Fix running balances relative to adjusted opening
-    balance = opening
-    for event in events:
-        balance += event.amount
-        event.running_balance = balance
-
-    print_output(opening, events, today, fm_end,
+    print_output(opening, events, today, fm_start, fm_end,
                  fmt=args.format, verbose=args.verbose)
