@@ -43,16 +43,23 @@ def main(argv: list[str] | None = None) -> None:
         help="Directory to initialise (default: .)",
     )
 
-    # --- import ---
+    # --- import (with sub-subcommands) ---
     import_p = sub.add_parser(
-        "import", help="Import payments from a Klarna HTML page",
+        "import", help="Import payment data from external sources",
     )
-    import_p.add_argument(
-        "html_file", help="Path to saved Klarna HTML file",
+    import_sub = import_p.add_subparsers(dest="import_source")
+
+    klarna_p = import_sub.add_parser(
+        "klarna", help="Import from a Klarna HTML page",
     )
-    import_p.add_argument(
-        "output", help="Output YAML file path (e.g. klarna.yaml)",
+    klarna_p.add_argument("input", help="Path to saved Klarna HTML file")
+    klarna_p.add_argument("output", help="Output YAML file path")
+
+    poste_p = import_sub.add_parser(
+        "poste", help="Import from a Poste Italiane XLSX file",
     )
+    poste_p.add_argument("input", help="Path to Poste XLSX file")
+    poste_p.add_argument("output", help="Output YAML file path")
 
     # --- show (implicit default) ---
     show_p = sub.add_parser(
@@ -85,8 +92,14 @@ def main(argv: list[str] | None = None) -> None:
         return
 
     if args.command == "import":
-        from .import_klarna import run_import
-        run_import(Path(args.html_file), Path(args.output))
+        if args.import_source == "klarna":
+            from .import_klarna import run_import
+            run_import(Path(args.input), Path(args.output))
+        elif args.import_source == "poste":
+            from .import_poste import run_import
+            run_import(Path(args.input), Path(args.output))
+        else:
+            import_p.print_help()
         return
 
     # show

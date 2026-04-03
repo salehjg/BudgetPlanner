@@ -203,10 +203,11 @@ def run_import(html_path: Path, output_path: Path) -> None:
     entries.sort(key=lambda e: e["date"])
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
+    output = {"source": "klarna", "entries": entries}
     with open(output_path, "w") as f:
         f.write(f"# Imported from Klarna on {date.today().isoformat()}\n")
         f.write(f"# Source: {html_path.name}\n\n")
-        yaml.dump(entries, f,
+        yaml.dump(output, f,
                   default_flow_style=False, sort_keys=False, allow_unicode=True)
 
     paid = sum(1 for e in entries if e.get("status") == "paid")
